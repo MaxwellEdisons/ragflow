@@ -3,7 +3,7 @@
 <img src="web/src/assets/logo-with-text.png" width="520" alt="ragflow logo">
 </a>
 </div>
-
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 <p align="center">
   <a href="./README.md">English</a> |
   <a href="./README_zh.md">简体中文</a> |

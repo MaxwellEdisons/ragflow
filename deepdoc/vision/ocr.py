@@ -528,32 +528,51 @@ class OCR:
                         get_project_base_directory(),
                         "rag/res/deepdoc")
                 
-                # Append muti-gpus task to the list
+                # 初始化检测器和识别器，每个设备一个实例
                 if PARALLEL_DEVICES is not None and PARALLEL_DEVICES > 0:
                     self.text_detector = []
                     self.text_recognizer = []
                     for device_id in range(PARALLEL_DEVICES):
-                        self.text_detector.append(TextDetector(model_dir, device_id))
-                        self.text_recognizer.append(TextRecognizer(model_dir, device_id))
+                        try:
+                            detector = TextDetector(model_dir, device_id)
+                            recognizer = TextRecognizer(model_dir, device_id)
+                            self.text_detector.append(detector)
+                            self.text_recognizer.append(recognizer)
+                        except Exception as e:
+                            logging.warning(f"Failed to initialize OCR with GPU {device_id}, falling back to CPU: {str(e)}")
+                            detector = TextDetector(model_dir, None)
+                            recognizer = TextRecognizer(model_dir, None)
+                            self.text_detector.append(detector)
+                            self.text_recognizer.append(recognizer)
                 else:
-                    self.text_detector = [TextDetector(model_dir, 0)]
-                    self.text_recognizer = [TextRecognizer(model_dir, 0)]
+                    # 默认使用 CPU
+                    self.text_detector = [TextDetector(model_dir, None)]
+                    self.text_recognizer = [TextRecognizer(model_dir, None)]
 
             except Exception:
                 model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
                                               local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
                                               local_dir_use_symlinks=False)
                 
-                if PARALLEL_DEVICES is not None:
-                    assert PARALLEL_DEVICES > 0, "Number of devices must be >= 1"
+                if PARALLEL_DEVICES is not None and PARALLEL_DEVICES > 0:
                     self.text_detector = []
                     self.text_recognizer = []
                     for device_id in range(PARALLEL_DEVICES):
-                        self.text_detector.append(TextDetector(model_dir, device_id))
-                        self.text_recognizer.append(TextRecognizer(model_dir, device_id))
+                        try:
+                            detector = TextDetector(model_dir, device_id)
+                            recognizer = TextRecognizer(model_dir, device_id)
+                            self.text_detector.append(detector)
+                            self.text_recognizer.append(recognizer)
+                        except Exception as e:
+                            logging.warning(f"Failed to initialize OCR with GPU {device_id}, falling back to CPU: {str(e)}")
+                            detector = TextDetector(model_dir, None)
+                            recognizer = TextRecognizer(model_dir, None)
+                            self.text_detector.append(detector)
+                            self.text_recognizer.append(recognizer)
                 else:
-                    self.text_detector = [TextDetector(model_dir, 0)]
-                    self.text_recognizer = [TextRecognizer(model_dir, 0)]
+                    # 默认使用 CPU
+                    self.text_detector = [TextDetector(model_dir, None)]
+                    self.text_recognizer = [TextRecognizer(model_dir, None)]
 
         self.drop_score = 0.5
         self.crop_image_res_index = 0

@@ -23,7 +23,7 @@ import threading
 from copy import deepcopy
 from io import BytesIO
 from timeit import default_timer as timer
-
+import torch.cuda
 import numpy as np
 import pdfplumber
 import trio
@@ -58,8 +58,21 @@ class RAGFlowPdfParser:
         ^_-
 
         """
-
+        # 初始化OCR，不传入device参数
         self.ocr = OCR()
+        # 尝试设置设备
+        try:
+            if torch.cuda.is_available():
+                self.ocr.to("cuda")
+            else:
+                self.ocr.to("cpu")
+        except Exception as e:
+            logging.warning(f"Failed to set OCR device, falling back to CPU: {str(e)}")
+            try:
+                self.ocr.to("cpu")
+            except Exception as e:
+                logging.error(f"Failed to set OCR to CPU: {str(e)}")
+
         self.parallel_limiter = None
         if PARALLEL_DEVICES is not None and PARALLEL_DEVICES > 1:
             self.parallel_limiter = [trio.CapacityLimiter(1) for _ in range(PARALLEL_DEVICES)]
@@ -68,16 +81,30 @@ class RAGFlowPdfParser:
             self.layouter = LayoutRecognizer("layout." + self.model_speciess)
         else:
             self.layouter = LayoutRecognizer("layout")
-        self.tbl_det = TableStructureRecognizer()
+            
+        # 初始化表格检测器
+        try:
+            self.tbl_det = TableStructureRecognizer()
+            if torch.cuda.is_available():
+                self.tbl_det.to("cuda")
+            else:
+                self.tbl_det.to("cpu")
+        except Exception as e:
+            logging.warning(f"Failed to initialize TableStructureRecognizer with CUDA, falling back to CPU: {str(e)}")
+            try:
+                self.tbl_det = TableStructureRecognizer()
+                self.tbl_det.to("cpu")
+            except Exception as e:
+                logging.error(f"Failed to initialize TableStructureRecognizer: {str(e)}")
 
         self.updown_cnt_mdl = xgb.Booster()
         if not settings.LIGHTEN:
             try:
-                import torch.cuda
                 if torch.cuda.is_available():
                     self.updown_cnt_mdl.set_param({"device": "cuda"})
-            except Exception:
-                logging.exception("RAGFlowPdfParser __init__")
+            except Exception as e:
+                logging.warning(f"Failed to set XGBoost to use CUDA, falling back to CPU: {str(e)}")
+                self.updown_cnt_mdl.set_param({"device": "cpu"})
         try:
             model_dir = os.path.join(
                 get_project_base_directory(),
@@ -146,7 +173,7 @@ class RAGFlowPdfParser:
             True if re.search(
                 r"([。？！；!?;+)）]|[a-z]\.)$",
                 up["text"]) else False,
-            True if re.search(r"[，：‘“、0-9（+-]$", up["text"]) else False,
+            True if re.search(r"[，：'“、0-9（+-]$", up["text"]) else False,
             True if re.search(
                 r"(^.?[/,?;:\]，。；：’”？！》】）-])",
                 down["text"]) else False,
@@ -295,7 +322,13 @@ class RAGFlowPdfParser:
 
     def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
         start = timer()
-        bxs = self.ocr.detect(np.array(img), device_id)
+        try:
+            bxs = self.ocr.detect(np.array(img), device_id)
+        except Exception as e:
+            logging.warning(f"OCR detection failed with error: {str(e)}, trying with CPU")
+            # 如果GPU失败，尝试使用CPU设备ID
+            bxs = self.ocr.detect(np.array(img), None)
+            
         logging.info(f"__ocr detecting boxes of a image cost ({timer() - start}s)")
 
         start = timer()
@@ -443,9 +476,9 @@ class RAGFlowPdfParser:
                 bxs.pop(i)
                 continue
             concatting_feats = [
-                b["text"].strip()[-1] in ",;:'\"，、‘“；：-",
+                b["text"].strip()[-1] in ",;:'\"，、'“；：-",
                 len(b["text"].strip()) > 1 and b["text"].strip(
-                )[-2] in ",;:'\"，‘“、；：",
+                )[-2] in ",;:'\"，'“、；：",
                 b_["text"].strip() and b_["text"].strip()[0] in "。；？！?”）),，、：",
             ]
             # features for not concating
